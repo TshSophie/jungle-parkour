@@ -6,8 +6,10 @@
 
 - `jungle-parkour-mobile.html` —— 手机版：底部触摸按钮操控，或开启前置摄像头用身体动作玩。
 - `jungle-parkour-demo.html` —— 桌面版：笔记本摄像头识别头部姿态操控（左右歪头换道、抬头/低头弹跳下蹲）。
-- `index.html` —— 落地页，含两个版本入口。
+- `jungle-parkour-3d.html` —— 高仿真 3D 验证版（Three.js）：程序化丛林（雾效/阴影/纵深）+ 会从树后突然窜出伏击的怪兽；输入/检测/校准层与桌面版完全一致，仅渲染层升级为 WebGL。
+- `index.html` —— 落地页，含各版本入口。
 - `lib/` —— 本地 MediaPipe 模型与 wasm 运行时（含 `face_landmarker.task`），保证离线可用、不依赖 CDN。
+- `lib/three/` —— 本地 Three.js（r160），供 3D 版离线使用。
 
 ## 本地运行
 

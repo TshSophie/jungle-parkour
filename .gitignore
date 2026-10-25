@@ -1,0 +1,5 @@
+# 项目内部/生成文件，不入库
+.workbuddy/
+.lan_ip
+cert.pem
+key.pem

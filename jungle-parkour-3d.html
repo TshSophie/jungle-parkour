@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>丛林跑酷 · 高仿真 Demo（Three.js）</title>
+<link rel="icon" href="data:," />
+<style>
+  :root{
+    --green:#3B6D11; --green-d:#27500A; --green-l:#EAF3DE;
+    --blue:#185FA5; --blue-d:#0C447C; --blue-l:#E6F1FB;
+    --ink:#1f2937; --muted:#5F5E5A; --amber:#854F0B;
+    --bg:#0f1a0f;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg);}
+  #app{min-height:100%;display:flex;align-items:center;justify-content:center;padding:16px;}
+  .screen{display:none;width:100%;max-width:560px;background:#fff;border-radius:16px;padding:22px;box-shadow:0 10px 40px rgba(0,0,0,.35);}
+  .screen.active{display:block;}
+  h1{font-size:20px;margin:0 0 6px;color:var(--green-d);}
+  h2{font-size:16px;margin:0 0 10px;color:var(--blue-d);}
+  p{line-height:1.7;color:var(--muted);font-size:14px;margin:8px 0;}
+  .hint{background:var(--green-l);border:1px solid #c0dd97;border-radius:10px;padding:12px 14px;font-size:14px;color:var(--green-d);margin:14px 0;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+  button{font:inherit;cursor:pointer;border:none;border-radius:10px;padding:11px 16px;font-size:14px;font-weight:600;transition:transform .05s ease;}
+  button:active{transform:translateY(1px);}
+  .btn-primary{background:var(--green);color:#fff;}
+  .btn-blue{background:var(--blue);color:#fff;}
+  .btn-ghost{background:#f1efea;color:var(--ink);}
+  .btn-danger{background:#a32d2d;color:#fff;}
+  .bar{height:14px;border-radius:8px;background:#eee;overflow:hidden;margin:10px 0;}
+  .bar > i{display:block;height:100%;width:0;background:linear-gradient(90deg,#639922,#3B6D11);transition:width .08s linear;}
+  .steps{display:flex;gap:6px;margin:10px 0;}
+  .steps span{flex:1;height:6px;border-radius:4px;background:#e3e3df;}
+  .steps span.done{background:var(--green);}
+  .steps span.cur{background:var(--blue);}
+  /* 3D 游戏区 */
+  .game-area3d{display:flex;align-items:stretch;justify-content:center;}
+  #gameWrap3d{position:relative;width:min(92vw,520px);height:min(76vh,720px);border-radius:14px;overflow:hidden;background:#0c1a0c;box-shadow:0 6px 24px rgba(0,0,0,.4);}
+  canvas#game3d{display:block;width:100%;height:100%;}
+  #hud{position:absolute;left:12px;top:10px;color:#eafff0;font-size:14px;text-shadow:0 1px 3px #000;line-height:1.6;pointer-events:none;}
+  #hitFlash{position:absolute;inset:0;background:#c82828;opacity:0;pointer-events:none;transition:opacity .05s linear;}
+  #loadTip{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#cfe;font-size:14px;text-align:center;padding:20px;}
+  .preview{position:fixed;right:12px;bottom:12px;width:150px;height:113px;border-radius:10px;overflow:hidden;border:2px solid rgba(255,255,255,.7);background:#000;box-shadow:0 2px 10px rgba(0,0,0,.45);z-index:40;}
+  .preview video,.preview canvas{position:absolute;inset:0;width:100%;height:100%;}
+  .preview video{transform:scaleX(-1);}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:rgba(0,0,0,.8);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;display:none;z-index:50;}
+  .small{font-size:12px;color:var(--muted);}
+  code{background:#f1efea;padding:1px 5px;border-radius:5px;font-size:12px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- 1. 开场 -->
+  <section id="screen-intro" class="screen active">
+    <h1>丛林跑酷 · 高仿真 Demo</h1>
+    <p>这是用 <strong>Three.js</strong> 重做的验证版：同样的<strong>身体动作操控</strong>（左/右探换道、上弹跳、下蹲躲），但画面升级为 3D 丛林——两侧树木、雾气纵深、阴影，以及会从树后<strong>突然窜出伏击</strong>的怪兽。目的是一次性验证「当前技术栈在高仿真场景够不够用」。</p>
+    <div class="hint">输入/检测/校准层和旧版完全一致（鼻尖坐标 → 四向动作 → 65% 触发 / 10% 死区 / 450ms 冷却）。只有渲染层换成了 WebGL。数据全部本地处理、不上传。</div>
+    <div class="hint" id="introHint" style="display:none;background:#E6F1FB;border-color:#b5d4f4;color:#0C447C;"></div>
+    <div class="row">
+      <button class="btn-primary" id="btnCam">开启摄像头校准并开始</button>
+      <button class="btn-primary" id="btnSaved" style="display:none;">用已保存校准开始</button>
+      <button class="btn-ghost" id="btnKb">无摄像头（键盘试玩）</button>
+      <button class="btn-ghost" id="btnReset" style="display:none;">清除已保存校准</button>
+    </div>
+    <p class="small">键盘模式：← → 换道，↑ 跳，↓ 蹲。3D 渲染依赖本地 <code>lib/three/three.module.js</code>，需通过本地服务器（http/https）打开，不能用 file:// 直接双击。</p>
+  </section>
+
+  <!-- 2. 校准 -->
+  <section id="screen-calib" class="screen">
+    <h2 id="calibTitle">热身校准</h2>
+    <div class="steps" id="calibSteps"></div>
+    <canvas id="calibPad" width="240" height="200" style="display:block;margin:6px auto;background:#f7faf7;border:1px solid #c0dd97;border-radius:10px;"></canvas>
+    <p class="small" style="text-align:center;">X = 左右探身　Y = 上弹/下蹲　○ 中性位　● 当前位置　绿点 = 已记录上限</p>
+    <div class="hint" id="calibHint">准备中…</div>
+    <div class="bar"><i id="calibBar"></i></div>
+    <p class="small" id="calibLive">实时幅度：—</p>
+    <div class="row">
+      <button class="btn-blue" id="btnCalibNext">记录并下一步</button>
+      <button class="btn-ghost" id="btnCalibRedo">重做本步</button>
+    </div>
+  </section>
+
+  <!-- 3. 确认 -->
+  <section id="screen-confirm" class="screen">
+    <h2>校准结果确认</h2>
+    <p>以下是你的舒适幅度上限（系统已按 65% 设为触发阈值，10% 设为防误触死区）：</p>
+    <div id="confirmTable" style="font-size:14px;line-height:2;"></div>
+    <div class="row">
+      <button class="btn-primary" id="btnStart">开始游戏</button>
+      <button class="btn-ghost" id="btnRecalib">重新校准</button>
+    </div>
+  </section>
+
+  <!-- 4. 游戏 -->
+  <section id="screen-game" class="screen">
+    <div class="game-area3d">
+      <div id="gameWrap3d">
+        <canvas id="game3d"></canvas>
+        <div id="hitFlash"></div>
+        <div id="loadTip">正在初始化 3D 场景…</div>
+        <div id="hud"></div>
+      </div>
+    </div>
+    <div class="row" style="justify-content:center;">
+      <button class="btn-ghost" id="btnQuit">退出 / 重校准</button>
+      <button class="btn-ghost" id="btnCamToggle">隐藏摄像头</button>
+    </div>
+  </section>
+
+  <!-- 5. 结束 -->
+  <section id="screen-over" class="screen">
+    <h1>本局结束</h1>
+    <p id="overScore" style="font-size:18px;color:var(--green-d);font-weight:600;"></p>
+    <p>在 3D 丛林里活动了身体，也躲过了几波伏击。再来一局？</p>
+    <div class="row">
+      <button class="btn-primary" id="btnAgain">再来一局</button>
+      <button class="btn-ghost" id="btnHome">回首页</button>
+    </div>
+  </section>
+
+</div>
+<div id="toast"></div>
+<div class="preview" id="camPreview" style="display:none;">
+  <video id="cam" playsinline muted></video>
+  <canvas id="overlay" width="150" height="113"></canvas>
+</div>
+<div id="errbox" style="display:none;position:fixed;left:12px;top:12px;max-width:90vw;background:#a32d2d;color:#fff;padding:10px 14px;border-radius:10px;font-size:13px;z-index:99;box-shadow:0 4px 16px rgba(0,0,0,.5);"></div>
+
+<script type="module">
+/* =========================================================================
+   高仿真 3D 版：输入/检测/校准层与旧版完全一致，渲染层替换为 Three.js。
+   仅新增 buildWorld / updateWorld3D / 怪兽伏击逻辑；其余逻辑原样复用。
+   ========================================================================= */
+let FaceLandmarker=null, FilesetResolver=null;
+let THREE=null;                       // Three.js 命名空间，动态加载
+
+const $ = s => document.querySelector(s);
+const screens = {
+  intro:$('#screen-intro'), calib:$('#screen-calib'), confirm:$('#screen-confirm'),
+  game:$('#screen-game'), over:$('#screen-over')
+};
+function show(name){ for(const k in screens) screens[k].classList.toggle('active', k===name); updatePreview(); }
+
+// ---------- 摄像头预览窗 ----------
+const CAM_HIDDEN_KEY='jungle3d_cam_hidden_v1';
+let previewHidden=false;
+try{ previewHidden=localStorage.getItem(CAM_HIDDEN_KEY)==='1'; }catch(e){}
+function updatePreview(){
+  const vis = usingCamera && (state==='calib'||state==='game') && !previewHidden;
+  $('#camPreview').style.display=vis?'block':'none';
+  const btn=$('#btnCamToggle');
+  if(btn) btn.textContent=previewHidden?'显示摄像头':'隐藏摄像头';
+}
+$('#btnCamToggle').onclick=()=>{
+  previewHidden=!previewHidden;
+  try{ localStorage.setItem(CAM_HIDDEN_KEY, previewHidden?'1':'0'); }catch(e){}
+  updatePreview();
+};
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(()=>t.style.display='none',2200); }
+
+const CALIB_KEY='jungle_calib_v1';
+function loadCalib(){
+  try{
+    const v=JSON.parse(localStorage.getItem(CALIB_KEY));
+    if(!v || !v.neutral || typeof v.neutral.x!=='number') return null;
+    return v;
+  }catch(e){ return null; }
+}
+function saveCalib(c){ try{ localStorage.setItem(CALIB_KEY, JSON.stringify(c)); }catch(e){} }
+function clearCalib(){ try{ localStorage.removeItem(CALIB_KEY); }catch(e){} }
+function renderIntro(){
+  const saved=loadCalib(); const ih=$('#introHint');
+  if(saved){
+    $('#btnCam').style.display='none'; $('#btnSaved').style.display=''; $('#btnReset').style.display='';
+    ih.style.display=''; ih.innerHTML='已保存你的身体动作校准偏好（左探 '+saved.left.toFixed(3)+' / 右探 '+saved.right.toFixed(3)+' / 上弹 '+saved.up.toFixed(3)+' / 下蹲 '+saved.down.toFixed(3)+'）。可直接开始；想重新适配点「开启摄像头校准」即可。';
+  } else {
+    $('#btnCam').style.display=''; $('#btnSaved').style.display='none'; $('#btnReset').style.display='none'; ih.style.display='none';
+  }
+}
+
+// ---------- 状态 ----------
+let state='intro';
+let usingCamera=true, keyboardMode=false;
+let faceLandmarker=null, video=$('#cam'), lastVideoTime=-1;
+let lastLandmarks=null;
+let pose={x:0.5, y:0.5};
+let calib=null;
+let calibState=null;
+let game=null;
+let threeReady=false;
+
+// 姿态计算：鼻尖归一化坐标，X=左右探身，Y=上弹(变小)/下蹲(变大)
+function computePose(lm){ const nose=lm[1]; return {x:nose.x, y:nose.y}; }
+
+// ---------- 摄像头 / 模型（MediaPipe，本地优先 + 三级兜底） ----------
+async function initCamera(){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480},audio:false});
+    video.srcObject=stream; await video.play();
+    return true;
+  }catch(e){ return false; }
+}
+async function initModel(){
+  const sources=[
+    { mod:'./lib/vision_bundle.mjs', wasm:'./lib/', model:'./lib/face_landmarker.task' },
+    { mod:'https://fastly.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12/vision_bundle.mjs',
+      wasm:'https://fastly.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12/wasm',
+      model:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task' },
+    { mod:'https://unpkg.com/@mediapipe/tasks-vision@0.10.12/vision_bundle.mjs',
+      wasm:'https://unpkg.com/@mediapipe/tasks-vision@0.10.12/wasm',
+      model:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task' },
+    { mod:'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12/vision_bundle.mjs',
+      wasm:'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12/wasm',
+      model:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task' }
+  ];
+  for(const s of sources){
+    try{
+      const m=await import(s.mod);
+      const fileset=await m.FilesetResolver.forVisionTasks(s.wasm);
+      let lm=null;
+      try{
+        lm=await m.FaceLandmarker.createFromOptions(fileset,{ baseOptions:{ modelAssetPath:s.model, delegate:"GPU" }, runningMode:"VIDEO", numFaces:1 });
+      }catch(e){
+        lm=await m.FaceLandmarker.createFromOptions(fileset,{ baseOptions:{ modelAssetPath:s.model, delegate:"CPU" }, runningMode:"VIDEO", numFaces:1 });
+      }
+      FaceLandmarker=m.FaceLandmarker; FilesetResolver=m.FilesetResolver;
+      faceLandmarker=lm;
+      return true;
+    }catch(e){ console.warn('模型源不可用，尝试下一个:', s.mod, e && e.message); }
+  }
+  return false;
+}
+// Three.js 动态加载（本地优先；失败再尝试 CDN，避免 file:// 或离线时整脚本崩溃）
+async function initThree(){
+  const srcs=[
+    './lib/three/three.module.js',
+    'https://unpkg.com/three@0.160.0/build/three.module.js',
+    'https://fastly.jsdelivr.net/npm/three@0.160.0/build/three.module.js'
+  ];
+  for(const s of srcs){
+    try{ const m=await import(s); THREE=m; return true; }
+    catch(e){ console.warn('Three.js 源不可用:', s, e && e.message); }
+  }
+  return false;
+}
+
+// ---------- 校准流程（与旧版完全一致） ----------
+const CALIB_STEPS=[
+  {key:'left',  dir:'向左探身', hint:'慢慢将上身向左探，到舒服的极限停住约 1 秒（系统自动记录，也可点「记录并下一步」）。'},
+  {key:'right', dir:'向右探身', hint:'慢慢将上身向右探，到舒服的极限停住约 1 秒。'},
+  {key:'up',    dir:'向上弹起', hint:'身体向上弹一下（稍离开椅面即可），在最高点停住约 1 秒。'},
+  {key:'down',  dir:'向下蹲',   hint:'身体向下蹲一点（工位上屈身即可），在最低点停住约 1 秒。'}
+];
+function startCalib(){
+  state='calib'; show('calib');
+  calibState={ phase:'neutral', stepIdx:0, neutral:null, extremes:{left:0,right:0,up:0,down:0}, peak:0, holdT:0, t:0 };
+  renderCalibSteps();
+  $('#calibTitle').textContent='第 0 步 · 采集中性位';
+  $('#calibHint').textContent='请坐正、面向摄像头，保持稳定…';
+  $('#calibBar').style.width='0%';
+}
+function renderCalibSteps(){
+  const wrap=$('#calibSteps'); wrap.innerHTML='';
+  for(let i=0;i<5;i++){
+    const s=document.createElement('span');
+    if(calibState.phase==='neutral'){ if(i===0)s.className='cur'; }
+    else{
+      const idx=calibState.stepIdx;
+      if(i<idx+1) s.className='done'; else if(i===idx+1) s.className='cur';
+    }
+    wrap.appendChild(s);
+  }
+}
+function stepMetric(){
+  if(!calibState.neutral) return 0;
+  const dX=pose.x-calibState.neutral.x;
+  const dY=pose.y-calibState.neutral.y;
+  const step=CALIB_STEPS[calibState.stepIdx];
+  return (step.key==='left'||step.key==='right')? dX : dY;
+}
+function updateCalib(dt){
+  if(!calibState) return;
+  if(calibState.phase==='neutral'){
+    if(poseValid()){
+      calibState.t+=dt;
+      $('#calibBar').style.width=Math.min(100,calibState.t/1.4*100)+'%';
+      if(calibState.t>1.4){
+        calibState.neutral={x:pose.x, y:pose.y};
+        calibState.phase='step'; calibState.stepIdx=0; enterStep();
+      }
+    }
+    return;
+  }
+  const v=stepMetric();
+  const step=CALIB_STEPS[calibState.stepIdx];
+  const absv=Math.abs(v);
+  if(absv>Math.abs(calibState.peak)) calibState.peak=v;
+  const stable = absv >= 0.85*Math.abs(calibState.peak) && Math.abs(calibState.peak) > 0.02;
+  if(stable){ calibState.holdT+=dt; } else { calibState.holdT=0; }
+  $('#calibBar').style.width=Math.min(100,calibState.holdT/1.0*100)+'%';
+  $('#calibLive').textContent='实时幅度：'+ v.toFixed(3);
+  if(calibState.holdT>=1.0) commitStep();
+}
+function poseValid(){ return faceLandmarker && lastLandmarks; }
+function enterStep(){
+  renderCalibSteps();
+  const step=CALIB_STEPS[calibState.stepIdx];
+  $('#calibTitle').textContent='第 '+(calibState.stepIdx+1)+' 步 · '+step.dir;
+  $('#calibHint').textContent=step.hint;
+  calibState.peak=0; calibState.holdT=0;
+}
+function commitStep(){
+  const step=CALIB_STEPS[calibState.stepIdx];
+  calibState.extremes[step.key]=calibState.peak;
+  calibState.stepIdx++;
+  if(calibState.stepIdx>=CALIB_STEPS.length){ finishCalib(); }
+  else { enterStep(); }
+}
+function finishCalib(){
+  calib=Object.assign({neutral:calibState.neutral}, calibState.extremes);
+  saveCalib(calib);
+  state='confirm'; show('confirm');
+  const rows=[
+    ['向左探身', calib.left], ['向右探身', calib.right],
+    ['向上弹起', calib.up], ['向下蹲', calib.down]
+  ];
+  let html='<p class="small">已保存此偏好，下次直接开始；可在首页「清除已保存校准」重置。</p>';
+  for(const [name,val] of rows){
+    const trig=(val*0.65);
+    html+=`<div>${name}：上限 <b>${val.toFixed(3)}</b> → 触发阈值 <b>${trig.toFixed(3)}</b>（死区 ${(Math.abs(val)*0.10).toFixed(3)}）</div>`;
+  }
+  $('#confirmTable').innerHTML=html;
+}
+
+// ---------- 游戏状态与输入映射（逻辑层原样复用） ----------
+const LANES_X=[-1.7,0,1.7];
+function trig(ext){ return ext*0.65; }
+function active(v, ext){ return ext!==0 && Math.sign(v)===Math.sign(ext) && Math.abs(v)>=Math.abs(trig(ext)); }
+function newGame(){
+  game={
+    lane:1, px:0, targetX:0,
+    obstacles:[], spawnT:0.8, score:0, lives:3, speed:14,
+    jumping:false, jumpT:0, crouching:false, crouchT:0,
+    lastJump:0, lastCrouch:0, armed:true, flash:0, anim:0
+  };
+}
+function shiftLane(d){ game.lane=Math.max(0,Math.min(2,game.lane+d)); game.targetX=LANES_X[game.lane]; }
+function jump(){ game.jumping=true; game.jumpT=0; }
+function crouch(){ game.crouching=true; game.crouchT=0; }
+
+function updateGame(dt, now){
+  const g=game;
+  g.px += (g.targetX-g.px)*Math.min(1,dt*12);
+  g.speed=14+g.score*0.05;
+  // 姿态输入（复用旧版阈值/死区/冷却）
+  if(usingCamera && calib){
+    const dX=pose.x-calib.neutral.x;
+    const dY=pose.y-calib.neutral.y;
+    const deadX=Math.abs(Math.max(Math.abs(calib.left),Math.abs(calib.right)))*0.10+0.005;
+    const deadY=Math.abs(Math.max(Math.abs(calib.up),Math.abs(calib.down)))*0.10+0.005;
+    const inDead=Math.abs(dX)<deadX && Math.abs(dY)<deadY;
+    if(inDead) g.armed=true;
+    if(g.armed){
+      if(active(dX,calib.left)){ shiftLane(-1); g.armed=false; }
+      else if(active(dX,calib.right)){ shiftLane(1); g.armed=false; }
+    }
+    if(active(dY,calib.up) && !g.jumping && now-g.lastJump>450){ jump(); g.lastJump=now; }
+    if(active(dY,calib.down) && !g.crouching && now-g.lastCrouch>450){ crouch(); g.lastCrouch=now; }
+  }
+  // 计时动作
+  if(g.jumping){ g.jumpT+=dt; if(g.jumpT>0.6){ g.jumping=false; } }
+  if(g.crouching){ g.crouchT+=dt; if(g.crouchT>0.6){ g.crouching=false; } }
+  if(g.flash>0) g.flash-=dt;
+  // 生成障碍（怪兽伏击）
+  g.spawnT-=dt;
+  if(g.spawnT<=0){
+    g.spawnT=Math.max(0.8, 1.5 - g.score*0.006);
+    spawnObstacle();
+  }
+  // 移动 + 伏击 + 碰撞
+  const lerp=(a,b,t)=>a+(b-a)*t;
+  const ease=t=>t*t*(3-2*t);
+  for(const o of g.obstacles){
+    o.z += g.speed*dt;
+    // 伏击：靠近后从树后窜出
+    if(!o.active){
+      if(!o.ambushing && o.z > -22){ o.ambushing=true; o.ambushT=0; }
+      if(o.ambushing){
+        o.ambushT=Math.min(1, o.ambushT + dt/0.5);
+        const t=ease(o.ambushT);
+        o.curX=lerp(o.startX, LANES_X[o.lane], t);
+        o.curScale=lerp(0.22, 1, t);
+        o.curY=lerp(o.hideY, o.restY, t);
+        if(o.ambushT>=1) o.active=true;
+      } else {
+        o.curX=o.startX; o.curScale=0.22; o.curY=o.hideY;
+      }
+    } else {
+      o.curX=LANES_X[o.lane]; o.curScale=1; o.curY=o.restY;
+    }
+    // 碰撞判定（仅在已伏击激活后生效）
+    if(o.active && !o.passed && Math.abs(o.z) < 1.3){
+      const sameLane = (o.lane===g.lane);
+      let safe = !sameLane;
+      if(sameLane){
+        if(o.type==='ground' && g.jumping) safe=true;
+        else if(o.type==='high' && g.crouching) safe=true;
+      }
+      if(!safe){
+        o.passed=true; g.lives--; g.flash=0.4;
+        if(g.lives<=0){ endGame(); return; }
+      }
+    }
+    if(o.active && !o.passed && o.z>3){ o.passed=true; g.score++; }
+  }
+  g.obstacles=g.obstacles.filter(o=>{
+    if(o.z>9){ if(o.mesh) world.scene.remove(o.mesh); return false; }
+    return true;
+  });
+}
+
+function renderGame(){
+  // 复用 2D 校准板 / 预览叠加由各自函数负责；此处仅更新 3D 世界
+  renderGame3D();
+}
+
+// ---------- 2D：校准板 / 预览叠加（与旧版一致） ----------
+function renderOverlay(){
+  const c=$('#overlay'), x=c.getContext('2d');
+  x.clearRect(0,0,c.width,c.height);
+  if(!lastLandmarks) return;
+  const sx=c.width/640, sy=c.height/480;
+  const le=lastLandmarks[33], re=lastLandmarks[263];
+  x.strokeStyle='#36d36b'; x.lineWidth=2;
+  x.beginPath();
+  x.moveTo(le.x*640*sx, le.y*480*sy);
+  x.lineTo(re.x*640*sx, re.y*480*sy);
+  x.stroke();
+  x.fillStyle='#36d36b';
+  for(const i of [33,263,1]){ x.beginPath(); x.arc(lastLandmarks[i].x*640*sx, lastLandmarks[i].y*480*sy,2.5,0,7); x.fill(); }
+}
+function renderCalibPad(){
+  const c=$('#calibPad'); if(!c) return; const x=c.getContext('2d');
+  const W=240,H=200, cx=W/2, cy=H/2;
+  x.clearRect(0,0,W,H);
+  x.strokeStyle='#dfe7df'; x.lineWidth=1;
+  x.beginPath(); x.moveTo(cx,8); x.lineTo(cx,H-8); x.moveTo(8,cy); x.lineTo(W-8,cy); x.stroke();
+  const sx=(W/2-18)/0.35, sy=(H/2-18)/0.35;
+  x.fillStyle='#9aa39a'; x.beginPath(); x.arc(cx,cy,3.5,0,7); x.fill();
+  if(calibState){
+    const ex=calibState.extremes;
+    x.fillStyle='#3B6D11';
+    const pts=[['left',ex.left],['right',ex.right],['up',ex.up],['down',ex.down]];
+    for(const [k,v] of pts){
+      if(!v) continue;
+      const px=cx + ((k==='left'||k==='right')? v*sx : 0);
+      const py=cy + ((k==='left'||k==='right')? 0 : v*sy);
+      x.beginPath(); x.arc(px,py,4,0,7); x.fill();
+    }
+  }
+  if(calibState && calibState.phase==='step'){
+    const k=CALIB_STEPS[calibState.stepIdx].key;
+    let ax=0,ay=0;
+    if(k==='left') ax=-1; else if(k==='right') ax=1; else if(k==='up') ay=-1; else ay=1;
+    const len=52, tipx=cx+ax*len, tipy=cy+ay*len;
+    x.strokeStyle='#185FA5'; x.fillStyle='#185FA5'; x.lineWidth=2.5;
+    x.beginPath(); x.moveTo(cx,cy); x.lineTo(tipx,tipy); x.stroke();
+    const ang=Math.atan2(ay,ax);
+    x.beginPath(); x.moveTo(tipx,tipy);
+    x.lineTo(tipx-Math.cos(ang-0.45)*11, tipy-Math.sin(ang-0.45)*11);
+    x.lineTo(tipx-Math.cos(ang+0.45)*11, tipy-Math.sin(ang+0.45)*11);
+    x.closePath(); x.fill();
+    x.fillStyle='#0C447C'; x.font='12px sans-serif'; x.textAlign='center';
+    x.fillText(CALIB_STEPS[calibState.stepIdx].dir, cx+ax*(len+14), cy+ay*(len+14)+4);
+    x.textAlign='start';
+  }
+  if(calibState && calibState.neutral){
+    const dX=pose.x-calibState.neutral.x;
+    const dY=pose.y-calibState.neutral.y;
+    const px=cx+Math.max(-0.35,Math.min(0.35,dX))*sx;
+    const py=cy+Math.max(-0.35,Math.min(0.35,dY))*sy;
+    x.fillStyle='#e0531d'; x.beginPath(); x.arc(px,py,5.5,0,7); x.fill();
+    x.strokeStyle='#fff'; x.lineWidth=1.5; x.stroke();
+  }
+}
+function endGame(){
+  state='over'; show('over');
+  $('#overScore').textContent=`本局得分 ${game.score}　剩余生命 ${game.lives}`;
+}
+
+/* =========================================================================
+   渲染层：Three.js 程序化丛林 + 怪兽伏击
+   ========================================================================= */
+const world={ scene:null, camera:null, renderer:null, player:null, parts:{}, trees:[], dividers:[], groundTex:null, dashTex:null, animTime:0 };
+
+function makeGrassTexture(){
+  const c=document.createElement('canvas'); c.width=256; c.height=256;
+  const x=c.getContext('2d');
+  x.fillStyle='#2f5d22'; x.fillRect(0,0,256,256);
+  for(let i=0;i<1600;i++){
+    const gx=Math.random()*256, gy=Math.random()*256;
+    x.fillStyle=`rgb(${30+Math.random()*25|0},${85+Math.random()*55|0},${25+Math.random()*20|0})`;
+    x.fillRect(gx,gy,2,3);
+  }
+  const t=new THREE.CanvasTexture(c);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,12);
+  t.colorSpace=THREE.SRGBColorSpace;
+  return t;
+}
+function makeDashTexture(){
+  const c=document.createElement('canvas'); c.width=16; c.height=64;
+  const x=c.getContext('2d');
+  x.clearRect(0,0,16,64);
+  x.fillStyle='rgba(255,255,255,.55)';
+  x.fillRect(5,6,6,34);
+  const t=new THREE.CanvasTexture(c);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(1,40);
+  return t;
+}
+function makeLimb(radius,len,mat,pivotY){
+  const pivot=new THREE.Group(); pivot.position.y=pivotY;
+  const geo=new THREE.CapsuleGeometry(radius,len,4,8);
+  const mesh=new THREE.Mesh(geo,mat); mesh.position.y=-(len/2+radius); mesh.castShadow=true;
+  pivot.add(mesh); return pivot;
+}
+function createPlayer(){
+  const g=new THREE.Group();
+  const skin=new THREE.MeshStandardMaterial({color:0xffd9a0,roughness:0.7});
+  const cloth=new THREE.MeshStandardMaterial({color:0xff8c1a,roughness:0.6,metalness:0.05,emissive:0x401400,emissiveIntensity:0.2});
+  const dark=new THREE.MeshStandardMaterial({color:0x2a2a33,roughness:0.8});
+  // 躯干
+  const torso=new THREE.Mesh(new THREE.CapsuleGeometry(0.28,0.6,6,12),cloth);
+  torso.position.y=0.95; torso.castShadow=true; g.add(torso);
+  // 头
+  const head=new THREE.Mesh(new THREE.SphereGeometry(0.26,20,16),skin);
+  head.position.y=1.62; head.castShadow=true; g.add(head);
+  // 护目镜（点缀）
+  const visor=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.1,0.18),new THREE.MeshStandardMaterial({color:0x113355,emissive:0x224488,emissiveIntensity:0.5,roughness:0.3}));
+  visor.position.set(0,1.66,0.2); g.add(visor);
+  // 四肢
+  const armL=makeLimb(0.09,0.4,cloth,1.28); armL.position.x=-0.36;
+  const armR=makeLimb(0.09,0.4,cloth,1.28); armR.position.x=0.36;
+  const legL=makeLimb(0.12,0.45,dark,0.62); legL.position.x=-0.15;
+  const legR=makeLimb(0.12,0.45,dark,0.62); legR.position.x=0.15;
+  g.add(armL,armR,legL,legR);
+  world.parts={armL,armR,legL,legR,torso,head};
+  return g;
+}
+function createTree(){
+  const g=new THREE.Group();
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.26,2.4,8),
+    new THREE.MeshStandardMaterial({color:0x5b3a1a,roughness:0.9}));
+  trunk.position.y=1.2; trunk.castShadow=true; trunk.receiveShadow=true; g.add(trunk);
+  const leafMat=new THREE.MeshStandardMaterial({color:0x2e7d2e,roughness:0.85});
+  const leafMat2=new THREE.MeshStandardMaterial({color:0x3f9a3f,roughness:0.85});
+  for(let i=0;i<3;i++){
+    const cone=new THREE.Mesh(new THREE.ConeGeometry(1.0-i*0.22,1.1,9), i%2?leafMat2:leafMat);
+    cone.position.y=2.3+i*0.7; cone.castShadow=true; g.add(cone);
+  }
+  return g;
+}
+function createMonster(type){
+  const g=new THREE.Group();
+  if(type==='ground'){
+    const body=new THREE.Mesh(new THREE.IcosahedronGeometry(0.55,0),
+      new THREE.MeshStandardMaterial({color:0xc0392b,roughness:0.6,emissive:0x300000,emissiveIntensity:0.3}));
+    body.position.y=0.6; body.castShadow=true; g.add(body);
+    const spikeMat=new THREE.MeshStandardMaterial({color:0x7a1f15,roughness:0.7});
+    for(let i=0;i<8;i++){
+      const sp=new THREE.Mesh(new THREE.ConeGeometry(0.12,0.35,6),spikeMat);
+      const a=i/8*Math.PI*2;
+      sp.position.set(Math.cos(a)*0.5,0.6+Math.sin(a*1.3)*0.1,Math.sin(a)*0.5);
+      sp.rotation.set(Math.PI/2,0,-a); g.add(sp);
+    }
+    addEyes(g,0.6,0.85,0.22);
+    g.userData.restY=0.0;
+  } else if(type==='high'){
+    // 悬挂伏击者：藤蔓 + 倒刺，须下蹲躲
+    const vine=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,2.4,6),
+      new THREE.MeshStandardMaterial({color:0x4a7a2a,roughness:0.9}));
+    vine.position.y=3.0; g.add(vine);
+    const body=new THREE.Mesh(new THREE.SphereGeometry(0.45,16,12),
+      new THREE.MeshStandardMaterial({color:0x8e44ad,roughness:0.5,emissive:0x2a0033,emissiveIntensity:0.4}));
+    body.position.y=1.9; body.castShadow=true; g.add(body);
+    const spikeMat=new THREE.MeshStandardMaterial({color:0x5e2d75,roughness:0.7});
+    for(let i=0;i<10;i++){
+      const sp=new THREE.Mesh(new THREE.ConeGeometry(0.1,0.3,6),spikeMat);
+      const a=i/10*Math.PI*2;
+      sp.position.set(Math.cos(a)*0.42,1.55,Math.sin(a)*0.42);
+      sp.rotation.x=Math.PI; g.add(sp);
+    }
+    addEyes(g,1.9,0.9,0.2);
+    g.userData.restY=0.0;
+  } else { // block：挡道巨怪，须换道
+    const body=new THREE.Mesh(new THREE.IcosahedronGeometry(0.85,1),
+      new THREE.MeshStandardMaterial({color:0x1f6b3a,roughness:0.7,emissive:0x06250f,emissiveIntensity:0.3}));
+    body.position.y=1.1; body.castShadow=true; g.add(body);
+    const spikeMat=new THREE.MeshStandardMaterial({color:0x0f4420,roughness:0.8});
+    for(let i=0;i<10;i++){
+      const sp=new THREE.Mesh(new THREE.ConeGeometry(0.16,0.5,6),spikeMat);
+      const a=i/10*Math.PI*2, b=(i%2)?0.6:1.0;
+      sp.position.set(Math.cos(a)*0.8,b,Math.sin(a)*0.8);
+      sp.rotation.set(Math.PI/2,0,-a); g.add(sp);
+    }
+    addEyes(g,1.1,1.0,0.3);
+    g.userData.restY=0.0;
+  }
+  return g;
+}
+function addEyes(group,y,z,sep){
+  const eyeMat=new THREE.MeshStandardMaterial({color:0xffff66,emissive:0xffcc00,emissiveIntensity:0.9});
+  const e1=new THREE.Mesh(new THREE.SphereGeometry(0.1,10,8),eyeMat);
+  const e2=e1.clone();
+  e1.position.set(-sep,y,z); e2.position.set(sep,y,z);
+  group.add(e1,e2);
+}
+
+function buildWorld(){
+  const canvas=$('#game3d');
+  const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace=THREE.SRGBColorSpace;
+  world.renderer=renderer;
+
+  const scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x8fbf80);
+  scene.fog=new THREE.FogExp2(0x8fbf80,0.015);
+  world.scene=scene;
+
+  const camera=new THREE.PerspectiveCamera(60,1,0.1,200);
+  camera.position.set(0,3.0,7.2);
+  world.camera=camera;
+
+  // 光照
+  const hemi=new THREE.HemisphereLight(0xbfe6ff,0x3a5a2a,1.0);
+  scene.add(hemi);
+  const sun=new THREE.DirectionalLight(0xfff2d0,1.5);
+  sun.position.set(6,12,4); sun.castShadow=true;
+  sun.shadow.mapSize.set(1024,1024);
+  sun.shadow.camera.near=1; sun.shadow.camera.far=50;
+  sun.shadow.camera.left=-12; sun.shadow.camera.right=12;
+  sun.shadow.camera.top=12; sun.shadow.camera.bottom=-12;
+  scene.add(sun);
+  const fill=new THREE.PointLight(0xffe0a0,0.4,40); fill.position.set(-4,5,2); scene.add(fill);
+
+  // 地面
+  world.groundTex=makeGrassTexture();
+  const ground=new THREE.Mesh(new THREE.PlaneGeometry(16,260),
+    new THREE.MeshStandardMaterial({map:world.groundTex,roughness:1}));
+  ground.rotation.x=-Math.PI/2; ground.position.z=-110; ground.receiveShadow=true;
+  scene.add(ground);
+
+  // 车道分隔虚线
+  world.dashTex=makeDashTexture();
+  for(const lx of [-0.85,0.85]){
+    const d=new THREE.Mesh(new THREE.PlaneGeometry(0.12,260),
+      new THREE.MeshBasicMaterial({map:world.dashTex.clone(),transparent:true}));
+    d.rotation.x=-Math.PI/2; d.position.set(lx,0.02,-110);
+    scene.add(d); world.dividers.push(d);
+  }
+
+  // 两侧树木
+  for(let i=0;i<26;i++){
+    const t=createTree();
+    const side=(i%2===0)?-1:1;
+    t.position.set(side*(4.2+Math.random()*2.2),0,-i*9+Math.random()*4);
+    t.scale.setScalar(0.9+Math.random()*0.5);
+    scene.add(t); world.trees.push(t);
+  }
+
+  // 玩家
+  world.player=createPlayer();
+  world.player.position.set(0,0,0);
+  scene.add(world.player);
+
+  // 落地阴影圆
+  const shadowBlob=new THREE.Mesh(new THREE.CircleGeometry(0.5,20),
+    new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.25}));
+  shadowBlob.rotation.x=-Math.PI/2; shadowBlob.position.set(0,0.02,0);
+  world.shadowBlob=shadowBlob; scene.add(shadowBlob);
+
+  resize3D();
+  threeReady=true;
+  $('#loadTip').style.display='none';
+}
+
+function spawnObstacle(){
+  const lane=Math.floor(Math.random()*3);
+  const r=Math.random();
+  const type = r<0.4?'ground' : r<0.72?'high' : 'block';
+  const mesh=createMonster(type);
+  const side=(lane===0)?1:(lane===2)?-1:((Math.random()<0.5)?1:-1);
+  const startX=side*4.3;
+  mesh.position.set(startX,0,-58);
+  mesh.scale.setScalar(0.22);
+  world.scene.add(mesh);
+  const hideY = type==='high'? 0.0 : 0.0;
+  game.obstacles.push({mesh,lane,type,z:-58,active:false,ambushing:false,ambushT:0,
+    startX, curX:startX, curScale:0.22, curY:0, hideY:0, restY:0, passed:false});
+}
+
+function renderGame3D(){
+  if(!threeReady) return;
+  const g=game, w=world;
+  // 尺寸守卫：进入游戏屏后首帧补一次 resize（避免初始隐藏导致 0x0）
+  const wrap=$('#gameWrap3d');
+  if(wrap && (wrap.clientWidth!==w._w || wrap.clientHeight!==w._h)){
+    resize3D(); w._w=wrap.clientWidth; w._h=wrap.clientHeight;
+  }
+  // 玩家横向
+  w.player.position.x=g.px;
+  // 跳跃 / 下蹲
+  const joff = g.jumping? Math.sin(g.jumpT/0.6*Math.PI)*1.25 : 0;
+  w.player.position.y=joff;
+  const cs = g.crouching? 0.6 : 1;
+  w.player.scale.y += (cs - w.player.scale.y)*Math.min(1,1/60*14);
+  // 跑动摆动
+  w.animTime += (g.jumping?0.2:1)*0.016*10;
+  const sw=Math.sin(w.animTime)*0.6;
+  w.parts.legL.rotation.x=sw; w.parts.legR.rotation.x=-sw;
+  w.parts.armL.rotation.x=-sw*0.8; w.parts.armR.rotation.x=sw*0.8;
+  w.player.position.y += Math.abs(Math.cos(w.animTime))*0.04*(g.jumping?0:1);
+  // 阴影跟随
+  w.shadowBlob.position.x=g.px;
+  w.shadowBlob.material.opacity = 0.25*(g.jumping?0.4:1);
+
+  // 障碍
+  for(const o of g.obstacles){
+    o.mesh.position.set(o.curX,o.curY,o.z);
+    o.mesh.scale.setScalar(o.curScale);
+    o.mesh.rotation.y += 0.02;
+  }
+  // 树木滚动 + 回收
+  for(const t of w.trees){
+    t.position.z += g.speed*0.016;
+    if(t.position.z>12){
+      t.position.z -= 26*9;
+      t.position.x=(Math.random()<0.5?-1:1)*(4.2+Math.random()*2.2);
+    }
+  }
+  // 地面 / 虚线滚动
+  if(w.groundTex) w.groundTex.offset.y -= g.speed*0.016*0.012;
+  for(const d of w.dividers){ if(d.material.map){ d.material.map.offset.y -= g.speed*0.016*0.03; } }
+
+  // 相机轻微跟随
+  w.camera.position.x += (g.px*0.4 - w.camera.position.x)*Math.min(1,1/60*4);
+  w.camera.lookAt(g.px*0.2,1.1,-8);
+
+  // 受击闪红
+  $('#hitFlash').style.opacity = g.flash>0 ? (g.flash/0.4*0.55).toFixed(2) : '0';
+
+  // HUD
+  $('#hud').innerHTML=`得分 ${g.score}　生命 ${'♥'.repeat(g.lives)}`+
+    (usingCamera&&calib? `<br><span style="font-size:12px;opacity:.85">x ${(pose.x-calib.neutral.x).toFixed(3)}　y ${(pose.y-calib.neutral.y).toFixed(3)}</span>`:'');
+
+  w.renderer.render(w.scene,w.camera);
+}
+
+function resize3D(){
+  if(!world.renderer) return;
+  const wrap=$('#gameWrap3d');
+  const w=wrap.clientWidth, h=wrap.clientHeight;
+  world.renderer.setSize(w,h,false);
+  world.camera.aspect=w/h; world.camera.updateProjectionMatrix();
+}
+window.addEventListener('resize',resize3D);
+
+// ---------- 主循环 ----------
+let lastTs=0, loopErrShown=false;
+function showFatalOnce(err){
+  if(loopErrShown) return; loopErrShown=true;
+  console.error('游戏循环异常:', err);
+  toast('游戏出现异常：'+(err&&err.message||err)+'（已尝试继续运行）');
+}
+function loop(ts){
+  const dt=Math.min(0.05,(ts-lastTs)/1000||0); lastTs=ts;
+  try{
+    if((state==='calib'||state==='game') && usingCamera && faceLandmarker && video.readyState>=2){
+      if(video.currentTime!==lastVideoTime){
+        lastVideoTime=video.currentTime;
+        let res=null;
+        try{ res=faceLandmarker.detectForVideo(video, ts); }catch(e){ res=null; }
+        if(res && res.faceLandmarks && res.faceLandmarks.length){
+          const p=computePose(res.faceLandmarks[0]);
+          pose.x=pose.x*0.5+p.x*0.5;
+          pose.y=pose.y*0.5+p.y*0.5;
+          lastLandmarks=res.faceLandmarks[0];
+        }
+      }
+    }
+    if(state==='calib'){ updateCalib(dt); renderCalibPad(); }
+    if(state==='game'){ updateGame(dt, ts); renderGame(); }
+    if(state==='game'||state==='calib') renderOverlay();
+  }catch(err){ showFatalOnce(err); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ---------- 键盘模式 ----------
+async function startKeyboard(){
+  keyboardMode=true; usingCamera=false;
+  const s=loadCalib();
+  calib=s || {neutral:{x:0.5,y:0.5}, left:-0.08, right:0.08, up:-0.08, down:0.08};
+  const ok=await ensureThree(); if(!ok){ toast('3D 初始化失败，无法进入游戏'); return; }
+  newGame(); state='game'; show('game');
+}
+window.addEventListener('keydown', e=>{
+  if(state!=='game'||!keyboardMode) return;
+  if(e.key==='ArrowLeft') shiftLane(-1);
+  else if(e.key==='ArrowRight') shiftLane(1);
+  else if(e.key==='ArrowUp'){ if(!game.jumping) jump(); }
+  else if(e.key==='ArrowDown'){ if(!game.crouching) crouch(); }
+});
+
+// 确保 3D 场景就绪（进入游戏前调用）
+async function ensureThree(){
+  if(threeReady) return true;
+  if(!THREE){ const ok=await initThree(); if(!ok){ toast('3D 渲染库加载失败（需联网或检查 lib/three）'); return false; } }
+  try{ buildWorld(); }catch(e){ console.error(e); toast('3D 场景初始化失败：'+(e&&e.message||e)); return false; }
+  return true;
+}
+
+// ---------- 按钮 ----------
+$('#btnCam').onclick=async()=>{
+  toast('正在请求摄像头并加载模型…');
+  const okCam=await initCamera();
+  if(!okCam){ toast('摄像头不可用，已切到键盘模式'); startKeyboard(); return; }
+  const okModel=await initModel();
+  if(!okModel){ toast('模型加载失败：请用本地服务打开（python -m http.server 8000），预览面板不含 lib 模型文件'); startKeyboard(); return; }
+  const ok3d=await ensureThree();
+  if(!ok3d){ toast('3D 初始化失败，无法进入游戏'); return; }
+  startCalib();
+};
+$('#btnKb').onclick=()=>startKeyboard();
+$('#btnCalibNext').onclick=()=>{
+  if(calibState.phase==='neutral'){
+    if(poseValid()){ calibState.neutral={x:pose.x,y:pose.y}; calibState.phase='step'; calibState.stepIdx=0; enterStep(); }
+    else toast('未检测到人脸，请面向摄像头');
+  } else { commitStep(); }
+};
+$('#btnCalibRedo').onclick=()=>{ if(calibState.phase!=='neutral'){ calibState.peak=0; calibState.holdT=0; } };
+$('#btnStart').onclick=async()=>{ const ok=await ensureThree(); if(!ok){ toast('3D 初始化失败'); return; } newGame(); state='game'; show('game'); };
+$('#btnRecalib').onclick=()=>startCalib();
+$('#btnQuit').onclick=()=>{ if(confirm('退出本局并重新校准？')) startCalib(); };
+$('#btnAgain').onclick=async()=>{ const ok=await ensureThree(); if(!ok){ toast('3D 初始化失败'); return; } keyboardMode?startKeyboard():startCalib(); };
+$('#btnHome').onclick=()=>{ state='intro'; show('intro'); renderIntro(); };
+$('#btnSaved').onclick=async()=>{
+  toast('正在准备摄像头…');
+  const okCam=await initCamera();
+  if(!okCam){ toast('摄像头不可用，已切到键盘模式'); startKeyboard(); return; }
+  const okModel=await initModel();
+  if(!okModel){ toast('模型加载失败，已切到键盘模式'); startKeyboard(); return; }
+  const ok3d=await ensureThree();
+  if(!ok3d){ toast('3D 初始化失败'); return; }
+  calib=loadCalib(); newGame(); state='game'; show('game');
+};
+$('#btnReset').onclick=()=>{ clearCalib(); renderIntro(); toast('已清除保存的校准，下次需重新采集'); };
+
+// 全局错误可视化
+window.addEventListener('error', e=>{
+  const b=document.getElementById('errbox');
+  if(b){ b.style.display='block'; b.textContent='页面异常：'+(e.message||e.type); }
+});
+window.addEventListener('unhandledrejection', e=>{
+  const b=document.getElementById('errbox');
+  if(b){ b.style.display='block'; b.textContent='页面异常：'+(e.reason&&e.reason.message||e.reason); }
+});
+renderIntro();
+</script>
+</body>
+</html>
