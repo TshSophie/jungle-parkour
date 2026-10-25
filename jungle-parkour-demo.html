@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>丛林跑酷 · 健身版 Demo</title>
+<style>
+  :root{
+    --green:#3B6D11; --green-d:#27500A; --green-l:#EAF3DE;
+    --blue:#185FA5; --blue-d:#0C447C; --blue-l:#E6F1FB;
+    --ink:#1f2937; --muted:#5F5E5A; --amber:#854F0B;
+    --bg:#0f1a0f;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg);}
+  #app{min-height:100%;display:flex;align-items:center;justify-content:center;padding:16px;}
+  .screen{display:none;width:100%;max-width:520px;background:#fff;border-radius:16px;padding:22px;box-shadow:0 10px 40px rgba(0,0,0,.35);}
+  .screen.active{display:block;}
+  h1{font-size:20px;margin:0 0 6px;color:var(--green-d);}
+  h2{font-size:16px;margin:0 0 10px;color:var(--blue-d);}
+  p{line-height:1.7;color:var(--muted);font-size:14px;margin:8px 0;}
+  .hint{background:var(--green-l);border:1px solid #c0dd97;border-radius:10px;padding:12px 14px;font-size:14px;color:var(--green-d);margin:14px 0;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+  button{font:inherit;cursor:pointer;border:none;border-radius:10px;padding:11px 16px;font-size:14px;font-weight:600;transition:transform .05s ease;}
+  button:active{transform:translateY(1px);}
+  .btn-primary{background:var(--green);color:#fff;}
+  .btn-blue{background:var(--blue);color:#fff;}
+  .btn-ghost{background:#f1efea;color:var(--ink);}
+  .btn-danger{background:#a32d2d;color:#fff;}
+  .bar{height:14px;border-radius:8px;background:#eee;overflow:hidden;margin:10px 0;}
+  .bar > i{display:block;height:100%;width:0;background:linear-gradient(90deg,#639922,#3B6D11);transition:width .08s linear;}
+  .steps{display:flex;gap:6px;margin:10px 0;}
+  .steps span{flex:1;height:6px;border-radius:4px;background:#e3e3df;}
+  .steps span.done{background:var(--green);}
+  .steps span.cur{background:var(--blue);}
+  #gameWrap{position:relative;margin:0;height:100%;aspect-ratio:2/3;flex-shrink:0;}
+  canvas#game{width:100%;height:100%;display:block;border-radius:14px;background:#0c1a0c;}
+  .game-area{display:flex;align-items:stretch;justify-content:center;gap:14px;height:min(720px, calc(100vh - 150px));}
+  .preview{position:relative;width:132px;height:99px;flex-shrink:0;align-self:flex-end;margin-bottom:26px;border-radius:10px;overflow:hidden;border:2px solid rgba(255,255,255,.7);background:#000;box-shadow:0 2px 8px rgba(0,0,0,.35);}
+  .preview video,.preview canvas{position:absolute;inset:0;width:100%;height:100%;}
+  .preview video{transform:scaleX(-1);}
+  #hud{position:absolute;left:10px;top:10px;color:#eafff0;font-size:13px;text-shadow:0 1px 2px #000;line-height:1.5;}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:rgba(0,0,0,.8);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;display:none;z-index:50;}
+  .small{font-size:12px;color:var(--muted);}
+  code{background:#f1efea;padding:1px 5px;border-radius:5px;font-size:12px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- 1. 开场 -->
+  <section id="screen-intro" class="screen active">
+    <h1>丛林跑酷 · 健身版</h1>
+    <p>用<strong>身体动作</strong>操控角色，在原始丛林里躲障碍。上身往<strong>左/右探</strong>换道，身体<strong>向上弹</strong>起跳，身体<strong>向下蹲</strong>躲高障碍——边玩边活动身体，缓解久坐疲劳。</p>
+    <div class="hint">建议先开摄像头做一遍「热身 + 校准」：系统会引导你做四个方向动作，并记住你<strong>舒服的幅度上限</strong>，按此个性化设定触发阈值。</div>
+    <div class="hint" id="introHint" style="display:none;background:#E6F1FB;border-color:#b5d4f4;color:#0C447C;"></div>
+    <div class="row">
+      <button class="btn-primary" id="btnCam">开启摄像头校准并开始</button>
+      <button class="btn-primary" id="btnSaved" style="display:none;">用已保存校准开始</button>
+      <button class="btn-ghost" id="btnKb">无摄像头（键盘试玩）</button>
+      <button class="btn-ghost" id="btnReset" style="display:none;">清除已保存校准</button>
+    </div>
+    <p class="small">键盘模式：← → 换道，↑ 跳，↓ 蹲。摄像头模式需要本地服务器与浏览器授权，数据全部在本地处理、不上传。</p>
+  </section>
+
+  <!-- 2. 校准 -->
+  <section id="screen-calib" class="screen">
+    <h2 id="calibTitle">热身校准</h2>
+    <div class="steps" id="calibSteps"></div>
+    <canvas id="calibPad" width="240" height="200" style="display:block;margin:6px auto;background:#f7faf7;border:1px solid #c0dd97;border-radius:10px;"></canvas>
+    <p class="small" style="text-align:center;">X = 左右探身　Y = 上弹/下蹲　○ 中性位　● 当前位置　绿点 = 已记录上限</p>
+    <div class="hint" id="calibHint">准备中…</div>
+    <div class="bar"><i id="calibBar"></i></div>
+    <p class="small" id="calibLive">实时角度：—</p>
+    <div class="row">
+      <button class="btn-blue" id="btnCalibNext">记录并下一步</button>
+      <button class="btn-ghost" id="btnCalibRedo">重做本步</button>
+    </div>
+  </section>
+
+  <!-- 3. 确认 -->
+  <section id="screen-confirm" class="screen">
+    <h2>校准结果确认</h2>
+    <p>以下是你的舒适角度上限（系统已按 65% 设为触发阈值，10% 设为防误触死区）：</p>
+    <div id="confirmTable" style="font-size:14px;line-height:2;"></div>
+    <div class="row">
+      <button class="btn-primary" id="btnStart">开始游戏</button>
+      <button class="btn-ghost" id="btnRecalib">重新校准</button>
+    </div>
+  </section>
+
+  <!-- 4. 游戏 -->
+  <section id="screen-game" class="screen">
+    <div class="game-area">
+      <div id="gameWrap">
+        <canvas id="game" width="480" height="720"></canvas>
+        <div id="hud"></div>
+      </div>
+      <div class="preview" id="camPreview" style="display:none;">
+        <video id="cam" playsinline muted></video>
+        <canvas id="overlay" width="132" height="99"></canvas>
+      </div>
+    </div>
+    <div class="row" style="justify-content:center;">
+      <button class="btn-ghost" id="btnQuit">退出 / 重校准</button>
+      <button class="btn-ghost" id="btnCamToggle">隐藏摄像头</button>
+    </div>
+  </section>
+
+  <!-- 5. 结束 -->
+  <section id="screen-over" class="screen">
+    <h1>本局结束</h1>
+    <p id="overScore" style="font-size:18px;color:var(--green-d);font-weight:600;"></p>
+    <p>活动了颈部、也躲过了一波障碍。再来一局？</p>
+    <div class="row">
+      <button class="btn-primary" id="btnAgain">再来一局</button>
+      <button class="btn-ghost" id="btnHome">回首页</button>
+    </div>
+  </section>
+
+</div>
+<div id="toast"></div>
+<div id="errbox" style="display:none;position:fixed;left:12px;top:12px;max-width:90vw;background:#a32d2d;color:#fff;padding:10px 14px;border-radius:10px;font-size:13px;z-index:99;box-shadow:0 4px 16px rgba(0,0,0,.5);"></div>
+
+<script type="module">
+// MediaPipe 改为动态加载：本地 lib/ 优先（离线可用、不依赖 CDN），失败再依次尝试镜像
+let FaceLandmarker=null, FilesetResolver=null;
+
+const $ = s => document.querySelector(s);
+const screens = {
+  intro:$('#screen-intro'), calib:$('#screen-calib'), confirm:$('#screen-confirm'),
+  game:$('#screen-game'), over:$('#screen-over')
+};
+function show(name){ for(const k in screens) screens[k].classList.toggle('active', k===name); updatePreview(); }
+
+// ---------- 摄像头预览窗 ----------
+const CAM_HIDDEN_KEY='jungle_cam_hidden_v1';
+let previewHidden=false;
+try{ previewHidden=localStorage.getItem(CAM_HIDDEN_KEY)==='1'; }catch(e){}
+function updatePreview(){
+  const vis = usingCamera && (state==='calib'||state==='game') && !previewHidden;
+  $('#camPreview').style.display=vis?'block':'none';
+  const btn=$('#btnCamToggle');
+  if(btn) btn.textContent=previewHidden?'显示摄像头':'隐藏摄像头';
+}
+$('#btnCamToggle').onclick=()=>{
+  previewHidden=!previewHidden;
+  try{ localStorage.setItem(CAM_HIDDEN_KEY, previewHidden?'1':'0'); }catch(e){}
+  updatePreview();
+};
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(()=>t.style.display='none',2200); }
+
+const CALIB_KEY='jungle_calib_v1';
+function loadCalib(){
+  try{
+    const v=JSON.parse(localStorage.getItem(CALIB_KEY));
+    if(!v || !v.neutral || typeof v.neutral.x!=='number') return null; // 旧版（头部旋转）格式视为无效
+    return v;
+  }catch(e){ return null; }
+}
+function saveCalib(c){ try{ localStorage.setItem(CALIB_KEY, JSON.stringify(c)); }catch(e){} }
+function clearCalib(){ try{ localStorage.removeItem(CALIB_KEY); }catch(e){} }
+function renderIntro(){
+  const saved=loadCalib(); const ih=$('#introHint');
+  if(saved){
+    $('#btnCam').style.display='none'; $('#btnSaved').style.display=''; $('#btnReset').style.display='';
+    ih.style.display=''; ih.innerHTML='已保存你的身体动作校准偏好（左探 '+saved.left.toFixed(3)+' / 右探 '+saved.right.toFixed(3)+' / 上弹 '+saved.up.toFixed(3)+' / 下蹲 '+saved.down.toFixed(3)+'）。可直接开始；想重新适配点「开启摄像头校准」即可。';
+  } else {
+    $('#btnCam').style.display=''; $('#btnSaved').style.display='none'; $('#btnReset').style.display='none'; ih.style.display='none';
+  }
+}
+
+// ---------- 状态 ----------
+let state='intro';
+let usingCamera=true, keyboardMode=false;
+let faceLandmarker=null, video=$('#cam'), lastVideoTime=-1;
+let lastLandmarks=null;
+let pose={x:0.5, y:0.5};                 // 平滑后的姿态（鼻尖归一化坐标）
+let calib=null;                          // {neutral, left,right,up,down} 均为带符号偏移量
+let calibState=null;
+let game=null;
+
+// 姿态计算：鼻尖归一化坐标，X=左右探身，Y=上弹(变小)/下蹲(变大)
+function computePose(lm){
+  const nose=lm[1];
+  return {x:nose.x, y:nose.y};
+}
+
+// ---------- 摄像头 / 模型 ----------
+async function initCamera(){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480},audio:false});
+    video.srcObject=stream; await video.play();
+    return true;
+  }catch(e){ return false; }
+}
+async function initModel(){
+  const sources=[
+    { mod:'./lib/vision_bundle.mjs', wasm:'./lib/', model:'./lib/face_landmarker.task' },               // 本地（离线可用）
+    { mod:'https://fastly.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12/vision_bundle.mjs',
+      wasm:'https://fastly.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12/wasm',
+      model:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task' },
+    { mod:'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12/vision_bundle.mjs',
+      wasm:'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12/wasm',
+      model:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task' }
+  ];
+  for(const s of sources){
+    try{
+      const m=await import(s.mod);
+      const fileset=await m.FilesetResolver.forVisionTasks(s.wasm);
+      let lm=null;
+      try{
+        lm=await m.FaceLandmarker.createFromOptions(fileset,{
+          baseOptions:{ modelAssetPath:s.model, delegate:"GPU" }, runningMode:"VIDEO", numFaces:1 });
+      }catch(e){
+        lm=await m.FaceLandmarker.createFromOptions(fileset,{
+          baseOptions:{ modelAssetPath:s.model, delegate:"CPU" }, runningMode:"VIDEO", numFaces:1 });
+      }
+      FaceLandmarker=m.FaceLandmarker; FilesetResolver=m.FilesetResolver;
+      faceLandmarker=lm;
+      return true;
+    }catch(e){ console.warn('模型源不可用，尝试下一个:', s.mod, e && e.message); }
+  }
+  return false;
+}
+
+// ---------- 校准流程 ----------
+const CALIB_STEPS=[
+  {key:'left',  dir:'向左探身', hint:'慢慢将上身向左探，到舒服的极限停住约 1 秒（系统自动记录，也可点「记录并下一步」）。'},
+  {key:'right', dir:'向右探身', hint:'慢慢将上身向右探，到舒服的极限停住约 1 秒。'},
+  {key:'up',    dir:'向上弹起', hint:'身体向上弹一下（稍离开椅面即可），在最高点停住约 1 秒。'},
+  {key:'down',  dir:'向下蹲',   hint:'身体向下蹲一点（工位上屈身即可），在最低点停住约 1 秒。'}
+];
+function startCalib(){
+  state='calib'; show('calib');
+  calibState={ phase:'neutral', stepIdx:0, neutral:null, extremes:{left:0,right:0,up:0,down:0}, peak:0, holdT:0, t:0 };
+  renderCalibSteps();
+  $('#calibTitle').textContent='第 0 步 · 采集中性位';
+  $('#calibHint').textContent='请坐正、面向摄像头，保持稳定…';
+  $('#calibBar').style.width='0%';
+}
+function renderCalibSteps(){
+  const wrap=$('#calibSteps'); wrap.innerHTML='';
+  for(let i=0;i<5;i++){
+    const s=document.createElement('span');
+    if(calibState.phase==='neutral'){ if(i===0)s.className='cur'; }
+    else{
+      const idx=calibState.stepIdx;
+      if(i<idx+1) s.className='done'; else if(i===idx+1) s.className='cur';
+    }
+    wrap.appendChild(s);
+  }
+}
+function stepMetric(){
+  if(!calibState.neutral) return 0;
+  const dX=pose.x-calibState.neutral.x;
+  const dY=pose.y-calibState.neutral.y;
+  const step=CALIB_STEPS[calibState.stepIdx];
+  return (step.key==='left'||step.key==='right')? dX : dY;
+}
+function updateCalib(dt){
+  if(!calibState) return;
+  if(calibState.phase==='neutral'){
+    if(poseValid()){
+      calibState.t+=dt;
+      $('#calibBar').style.width=Math.min(100,calibState.t/1.4*100)+'%';
+      if(calibState.t>1.4){
+      calibState.neutral={x:pose.x, y:pose.y};
+        calibState.phase='step'; calibState.stepIdx=0;
+        enterStep();
+      }
+    }
+    return;
+  }
+  // 采集某方向极值
+  const v=stepMetric();
+  const step=CALIB_STEPS[calibState.stepIdx];
+  const absv=Math.abs(v);
+  if(absv>Math.abs(calibState.peak)) calibState.peak=v;     // 记录带符号峰值
+  // 稳定保持检测（接近峰值且持续）
+  const stable = absv >= 0.85*Math.abs(calibState.peak) && Math.abs(calibState.peak) > 0.02;
+  if(stable){ calibState.holdT+=dt; } else { calibState.holdT=0; }
+  $('#calibBar').style.width=Math.min(100,calibState.holdT/1.0*100)+'%';
+  $('#calibLive').textContent='实时幅度：'+ v.toFixed(3);
+  if(calibState.holdT>=1.0) commitStep();
+}
+function poseValid(){ return faceLandmarker && lastLandmarks; }
+function enterStep(){
+  renderCalibSteps();
+  const step=CALIB_STEPS[calibState.stepIdx];
+  $('#calibTitle').textContent='第 '+(calibState.stepIdx+1)+' 步 · '+step.dir;
+  $('#calibHint').textContent=step.hint;
+  calibState.peak=0; calibState.holdT=0;
+}
+function commitStep(){
+  const step=CALIB_STEPS[calibState.stepIdx];
+  calibState.extremes[step.key]=calibState.peak;
+  calibState.stepIdx++;
+  if(calibState.stepIdx>=CALIB_STEPS.length){ finishCalib(); }
+  else { enterStep(); }
+}
+function finishCalib(){
+  calib=Object.assign({neutral:calibState.neutral}, calibState.extremes);
+  saveCalib(calib);
+  state='confirm'; show('confirm');
+  const rows=[
+    ['向左探身', calib.left],
+    ['向右探身', calib.right],
+    ['向上弹起', calib.up],
+    ['向下蹲', calib.down]
+  ];
+  let html='<p class="small">已保存此偏好，下次直接开始；可在首页「清除已保存校准」重置。</p>';
+  for(const [name,val] of rows){
+    const trig=(val*0.65);
+    html+=`<div>${name}：上限 <b>${val.toFixed(3)}</b> → 触发阈值 <b>${trig.toFixed(3)}</b>（死区 ${(Math.abs(val)*0.10).toFixed(3)}）</div>`;
+  }
+  $('#confirmTable').innerHTML=html;
+}
+
+// ---------- 游戏 ----------
+function trig(ext){ return ext*0.65; }
+function active(v, ext){ return ext!==0 && Math.sign(v)===Math.sign(ext) && Math.abs(v)>=Math.abs(trig(ext)); }
+function newGame(){
+  game={
+    lane:1, laneX:240, targetLaneX:240,
+    obstacles:[], spawnT:0, score:0, lives:3, speed:230,
+    jumping:false, jumpT:0, crouching:false, crouchT:0,
+    lastJump:0, lastCrouch:0, armed:true, flash:0, scroll:0
+  };
+}
+function shiftLane(d){ game.targetLaneX=Math.max(120,Math.min(360,game.targetLaneX+d*120)); }
+function jump(){ game.jumping=true; game.jumpT=0; }
+function crouch(){ game.crouching=true; game.crouchT=0; }
+
+function updateGame(dt, now){
+  const g=game;
+  g.laneX += (g.targetLaneX-g.laneX)*Math.min(1,dt*12);
+  g.speed=230+g.score*1.5;
+  // 姿态输入
+  if(usingCamera && calib){
+    const dX=pose.x-calib.neutral.x;
+    const dY=pose.y-calib.neutral.y;
+    const deadX=Math.abs(Math.max(Math.abs(calib.left),Math.abs(calib.right)))*0.10+0.005;
+    const deadY=Math.abs(Math.max(Math.abs(calib.up),Math.abs(calib.down)))*0.10+0.005;
+    const inDead=Math.abs(dX)<deadX && Math.abs(dY)<deadY;
+    if(inDead) g.armed=true;
+    if(g.armed){
+      if(active(dX,calib.left)){ shiftLane(-1); g.armed=false; }
+      else if(active(dX,calib.right)){ shiftLane(1); g.armed=false; }
+    }
+    if(active(dY,calib.up) && !g.jumping && now-g.lastJump>450){ jump(); g.lastJump=now; }
+    if(active(dY,calib.down) && !g.crouching && now-g.lastCrouch>450){ crouch(); g.lastCrouch=now; }
+  }
+  // 计时动作
+  if(g.jumping){ g.jumpT+=dt; if(g.jumpT>0.6){ g.jumping=false; } }
+  if(g.crouching){ g.crouchT+=dt; if(g.crouchT>0.6){ g.crouching=false; } }
+  if(g.flash>0) g.flash-=dt;
+  // 生成障碍
+  g.spawnT-=dt;
+  if(g.spawnT<=0){
+    g.spawnT=Math.max(0.55, 1.15 - g.score*0.004);
+    const lane=Math.floor(Math.random()*3);
+    const r=Math.random();
+    const type = r<0.4?'ground' : r<0.75?'high' : 'block';
+    g.obstacles.push({lane, y:-60, type, passed:false});
+  }
+  // 移动 + 碰撞
+  const py=620;
+  for(const o of g.obstacles){
+    o.y += g.speed*dt;
+    if(!o.passed && o.y>py-46 && o.y<py+46){
+      const sameLane = Math.abs([120,240,360][o.lane]-g.laneX)<60;
+      let safe=false;
+      if(!sameLane) safe=true;
+      else if(o.type==='ground' && g.jumping) safe=true;
+      else if(o.type==='high' && g.crouching) safe=true;
+      if(!safe){
+        o.passed=true; g.lives--; g.flash=0.4;
+        if(g.lives<=0){ endGame(); return; }
+      }
+    }
+    if(!o.passed && o.y>py+60){ o.passed=true; g.score++; }
+  }
+  g.obstacles=g.obstacles.filter(o=>o.y<760);
+  g.scroll=(g.scroll+g.speed*dt)%80;
+}
+
+function renderGame(){
+  const c=$('#game'), x=c.getContext('2d');
+  const W=480,H=720;
+  // 背景：丛林渐变
+  const sky=x.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,'#bfe6a8'); sky.addColorStop(0.5,'#6cae54'); sky.addColorStop(1,'#2f5d22');
+  x.fillStyle=sky; x.fillRect(0,0,W,H);
+  // 两侧树丛（滚动）
+  x.fillStyle='rgba(20,60,20,.55)';
+  for(let i=-1;i<7;i++){
+    const yy=(i*80+game.scroll);
+    x.beginPath(); x.ellipse(20,yy,46,60,0,0,7); x.fill();
+    x.beginPath(); x.ellipse(W-20,yy+40,46,60,0,0,7); x.fill();
+  }
+  // 地面草地带
+  x.fillStyle='#274d1b'; x.fillRect(0,H-70,W,70);
+  // 车道分隔虚线
+  x.strokeStyle='rgba(255,255,255,.25)'; x.lineWidth=2; x.setLineDash([12,16]);
+  for(const lx of [180,300]){ x.beginPath(); x.moveTo(lx,0); x.lineTo(lx,H); x.stroke(); }
+  x.setLineDash([]);
+  // 障碍
+  for(const o of game.obstacles){
+    const lx=[120,240,360][o.lane];
+    if(o.type==='ground'){ x.fillStyle='#7a3b12'; x.fillRect(lx-34,o.y,68,30); x.fillStyle='#a85a23'; x.fillRect(lx-34,o.y,68,8);}
+    else if(o.type==='high'){ x.fillStyle='#5b3a1a'; x.fillRect(lx-36,o.y-30,72,18); x.fillStyle='#3f7d2e'; x.fillRect(lx-40,o.y-44,80,16);}
+    else { x.fillStyle='#3a2a1a'; x.fillRect(lx-40,o.y-30,80,60); x.fillStyle='#5a4022'; x.fillRect(lx-40,o.y-30,80,10);}
+  }
+  // 玩家
+  const py=620;
+  const joff = game.jumping? Math.sin(game.jumpT/0.6*Math.PI)*64 : 0;
+  const crouch = game.crouching? 0.6 : 1;
+  const px=game.laneX, bodyH=54*crouch, headR=15;
+  // 身体
+  x.fillStyle='#ffd27f'; x.fillRect(px-13, py-joff-bodyH, 26, bodyH);
+  // 头
+  x.fillStyle='#ffe0a3'; x.beginPath(); x.arc(px, py-joff-bodyH-headR+4, headR,0,7); x.fill();
+  x.strokeStyle='#caa15a'; x.lineWidth=2; x.stroke();
+  // 受击闪红
+  if(game.flash>0){ x.fillStyle='rgba(200,40,40,'+(game.flash*0.6)+')'; x.fillRect(0,0,W,H); }
+  // HUD
+  $('#hud').innerHTML=`得分 ${game.score}　生命 ${'♥'.repeat(game.lives)}`+
+    (usingCamera&&calib? `<br><span style="font-size:11px;opacity:.85">x ${(pose.x-calib.neutral.x).toFixed(3)}　y ${(pose.y-calib.neutral.y).toFixed(3)}</span>`:'');
+}
+
+function renderOverlay(){
+  const c=$('#overlay'), x=c.getContext('2d');
+  x.clearRect(0,0,c.width,c.height);
+  if(!lastLandmarks) return;
+  const sx=c.width/640, sy=c.height/480;
+  const le=lastLandmarks[33], re=lastLandmarks[263];
+  x.strokeStyle='#36d36b'; x.lineWidth=2;
+  x.beginPath();
+  x.moveTo(le.x*640*sx, le.y*480*sy);
+  x.lineTo(re.x*640*sx, re.y*480*sy);
+  x.stroke();
+  x.fillStyle='#36d36b';
+  for(const i of [33,263,1]){ x.beginPath(); x.arc(lastLandmarks[i].x*640*sx, lastLandmarks[i].y*480*sy,2.5,0,7); x.fill(); }
+}
+
+function renderCalibPad(){
+  const c=$('#calibPad'); if(!c) return; const x=c.getContext('2d');
+  const W=240,H=200, cx=W/2, cy=H/2;
+  x.clearRect(0,0,W,H);
+  x.strokeStyle='#dfe7df'; x.lineWidth=1;
+  x.beginPath(); x.moveTo(cx,8); x.lineTo(cx,H-8); x.moveTo(8,cy); x.lineTo(W-8,cy); x.stroke();
+  const sx=(W/2-18)/0.35, sy=(H/2-18)/0.35;     // 横轴=左右探身，纵轴=上弹/下蹲（均为归一化幅度 ±0.35）
+  // 中性位
+  x.fillStyle='#9aa39a'; x.beginPath(); x.arc(cx,cy,3.5,0,7); x.fill();
+  // 已记录上限（绿点）
+  if(calibState){
+    const ex=calibState.extremes;
+    x.fillStyle='#3B6D11';
+    const pts=[['left',ex.left],['right',ex.right],['up',ex.up],['down',ex.down]];
+    for(const [k,v] of pts){
+      if(!v) continue;
+      const px=cx + ((k==='left'||k==='right')? v*sx : 0);
+      const py=cy + ((k==='left'||k==='right')? 0 : v*sy);
+      x.beginPath(); x.arc(px,py,4,0,7); x.fill();
+    }
+  }
+  // 当前步骤目标方向（蓝箭头）
+  if(calibState && calibState.phase==='step'){
+    const k=CALIB_STEPS[calibState.stepIdx].key;
+    let ax=0,ay=0;
+    if(k==='left') ax=-1; else if(k==='right') ax=1; else if(k==='up') ay=-1; else ay=1;
+    const len=52, tipx=cx+ax*len, tipy=cy+ay*len;
+    x.strokeStyle='#185FA5'; x.fillStyle='#185FA5'; x.lineWidth=2.5;
+    x.beginPath(); x.moveTo(cx,cy); x.lineTo(tipx,tipy); x.stroke();
+    const ang=Math.atan2(ay,ax);
+    x.beginPath(); x.moveTo(tipx,tipy);
+    x.lineTo(tipx-Math.cos(ang-0.45)*11, tipy-Math.sin(ang-0.45)*11);
+    x.lineTo(tipx-Math.cos(ang+0.45)*11, tipy-Math.sin(ang+0.45)*11);
+    x.closePath(); x.fill();
+    x.fillStyle='#0C447C'; x.font='12px sans-serif'; x.textAlign='center';
+    x.fillText(CALIB_STEPS[calibState.stepIdx].dir, cx+ax*(len+14), cy+ay*(len+14)+4);
+    x.textAlign='start';
+  }
+  // 当前身体位置（橙点）
+  if(calibState && calibState.neutral){
+    const dX=pose.x-calibState.neutral.x;
+    const dY=pose.y-calibState.neutral.y;
+    const px=cx+Math.max(-0.35,Math.min(0.35,dX))*sx;
+    const py=cy+Math.max(-0.35,Math.min(0.35,dY))*sy;
+    x.fillStyle='#e0531d'; x.beginPath(); x.arc(px,py,5.5,0,7); x.fill();
+    x.strokeStyle='#fff'; x.lineWidth=1.5; x.stroke();
+  }
+}
+
+function endGame(){
+  state='over'; show('over');
+  $('#overScore').textContent=`本局得分 ${game.score}　剩余生命 ${game.lives}`;
+}
+
+// ---------- 主循环 ----------
+let lastTs=0, loopErrShown=false;
+function showFatalOnce(err){
+  if(loopErrShown) return; loopErrShown=true;
+  console.error('游戏循环异常:', err);
+  toast('游戏出现异常：'+(err&&err.message||err)+'（已尝试继续运行）');
+}
+function loop(ts){
+  const dt=Math.min(0.05,(ts-lastTs)/1000||0); lastTs=ts;
+  try{
+    if((state==='calib'||state==='game') && usingCamera && faceLandmarker && video.readyState>=2){
+      if(video.currentTime!==lastVideoTime){
+        lastVideoTime=video.currentTime;
+        let res=null;
+        try{ res=faceLandmarker.detectForVideo(video, ts); }
+        catch(e){ res=null; }               // 单帧检测失败（如首帧/ROI 异常）不致命
+        if(res && res.faceLandmarks && res.faceLandmarks.length){
+          const p=computePose(res.faceLandmarks[0]);
+          pose.x=pose.x*0.5+p.x*0.5;
+          pose.y=pose.y*0.5+p.y*0.5;
+          lastLandmarks=res.faceLandmarks[0];
+        }
+      }
+    }
+    if(state==='calib'){ updateCalib(dt); renderCalibPad(); }
+    if(state==='game'){ updateGame(dt, ts); renderGame(); }
+    if(state==='game'||state==='calib') renderOverlay();
+  }catch(err){ showFatalOnce(err); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ---------- 键盘模式 ----------
+function startKeyboard(){
+  keyboardMode=true; usingCamera=false;
+  const s=loadCalib();
+  calib=s || {neutral:{x:0.5,y:0.5}, left:-0.08, right:0.08, up:-0.08, down:0.08};
+  newGame(); state='game'; show('game');
+}
+window.addEventListener('keydown', e=>{
+  if(state!=='game'||!keyboardMode) return;
+  if(e.key==='ArrowLeft') shiftLane(-1);
+  else if(e.key==='ArrowRight') shiftLane(1);
+  else if(e.key==='ArrowUp'){ if(!game.jumping) jump(); }
+  else if(e.key==='ArrowDown'){ if(!game.crouching) crouch(); }
+});
+
+// ---------- 按钮 ----------
+$('#btnCam').onclick=async()=>{
+  toast('正在请求摄像头并加载模型…');
+  const okCam=await initCamera();
+  if(!okCam){ toast('摄像头不可用，已切到键盘模式'); startKeyboard(); return; }
+  const okModel=await initModel();
+  if(!okModel){ toast('模型加载失败（需联网），已切到键盘模式'); startKeyboard(); return; }
+  startCalib();
+};
+$('#btnKb').onclick=()=>startKeyboard();
+$('#btnCalibNext').onclick=()=>{
+  if(calibState.phase==='neutral'){
+    if(poseValid()){ calibState.neutral={x:pose.x,y:pose.y}; calibState.phase='step'; calibState.stepIdx=0; enterStep(); }
+    else toast('未检测到人脸，请面向摄像头');
+  } else { commitStep(); }
+};
+$('#btnCalibRedo').onclick=()=>{ if(calibState.phase!=='neutral'){ calibState.peak=0; calibState.holdT=0; } };
+$('#btnStart').onclick=()=>{ newGame(); state='game'; show('game'); };
+$('#btnRecalib').onclick=()=>startCalib();
+$('#btnQuit').onclick=()=>{ if(confirm('退出本局并重新校准？')) startCalib(); };
+$('#btnAgain').onclick=()=>{ keyboardMode?startKeyboard():startCalib(); };
+$('#btnHome').onclick=()=>{ state='intro'; show('intro'); renderIntro(); };
+$('#btnSaved').onclick=async()=>{
+  toast('正在准备摄像头…');
+  const okCam=await initCamera();
+  if(!okCam){ toast('摄像头不可用，已切到键盘模式'); startKeyboard(); return; }
+  const okModel=await initModel();
+  if(!okModel){ toast('模型加载失败，已切到键盘模式'); startKeyboard(); return; }
+  calib=loadCalib(); newGame(); state='game'; show('game');
+};
+$('#btnReset').onclick=()=>{ clearCalib(); renderIntro(); toast('已清除保存的校准，下次需重新采集'); };
+// 全局错误可视化：任何未捕获异常直接显示在页面上，便于定位问题
+window.addEventListener('error', e=>{
+  const b=document.getElementById('errbox');
+  if(b){ b.style.display='block'; b.textContent='页面异常：'+(e.message||e.type); }
+});
+window.addEventListener('unhandledrejection', e=>{
+  const b=document.getElementById('errbox');
+  if(b){ b.style.display='block'; b.textContent='页面异常：'+(e.reason&&e.reason.message||e.reason); }
+});
+renderIntro();
+</script>
+</body>
+</html>

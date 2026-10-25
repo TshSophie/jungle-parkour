@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>丛林跑酷 · 健身版</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{min-height:100vh;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:linear-gradient(160deg,#0c1a0c 0%,#16361a 45%,#1f4a23 100%);color:#eaf5ea;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 18px;}
+  h1{font-size:26px;letter-spacing:2px;margin-bottom:6px;text-shadow:0 2px 8px rgba(0,0,0,.5);}
+  .sub{opacity:.82;font-size:14px;margin-bottom:28px;text-align:center;line-height:1.6;max-width:420px;}
+  .cards{display:flex;flex-wrap:wrap;gap:16px;justify-content:center;max-width:560px;width:100%;}
+  .card{flex:1 1 220px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);
+    border-radius:16px;padding:22px 18px;text-align:center;text-decoration:none;color:#eaf5ea;
+    transition:transform .15s ease,background .15s ease;}
+  .card:hover{transform:translateY(-4px);background:rgba(255,255,255,.13);}
+  .card .ico{font-size:34px;margin-bottom:10px;}
+  .card h2{font-size:18px;margin-bottom:8px;}
+  .card p{font-size:13px;opacity:.8;line-height:1.5;}
+  .tip{margin-top:30px;font-size:12px;opacity:.6;text-align:center;line-height:1.6;max-width:460px;}
+</style>
+</head>
+<body>
+  <h1>🌿 丛林跑酷 · 健身版</h1>
+  <p class="sub">用身体动作操控角色在原始丛林里躲障碍，边玩边活动颈肩、缓解久坐疲劳。<br>请允许摄像头权限以获得最佳体验。</p>
+  <div class="cards">
+    <a class="card" href="jungle-parkour-mobile.html">
+      <div class="ico">📱</div>
+      <h2>手机版</h2>
+      <p>触摸按钮操控，或开启前置摄像头用身体动作玩。推荐手机访问。</p>
+    </a>
+    <a class="card" href="jungle-parkour-demo.html">
+      <div class="ico">💻</div>
+      <h2>桌面版</h2>
+      <p>笔记本电脑摄像头识别头部姿态（左右歪头 / 上下弹跳）操控。</p>
+    </a>
+  </div>
+  <p class="tip">摄像头需在 HTTPS 或 localhost 下才能启用；公开链接任何拿到的人都能试玩，校准数据仅保存在各自浏览器。</p>
+</body>
+</html>
